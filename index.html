@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Vorher / Nachher · Black Magic Detailer</title>
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#0a0a0b">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Vorher/Nachher">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Michroma&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0b;
+    --surface: #141416;
+    --line: #2a2a2e;
+    --text: #ececec;
+    --muted: #9a9aa0;
+    --gold: #c9a45c;
+    --gold-hi: #f0d99f;
+    --warn: #e0a15a;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  main { max-width: 560px; margin: 0 auto; padding: 0 16px 48px; }
+
+  .top {
+    max-width: 560px; margin: 0 auto; padding: 22px 16px 18px;
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  }
+  .brand { font-family: Michroma, sans-serif; font-size: 15px; letter-spacing: .22em; }
+  .brand b { font-weight: 400; background: linear-gradient(90deg, var(--gold-hi), var(--gold) 45%, #8e6c2f 70%, var(--gold-hi)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .top small { color: var(--muted); font-size: 13px; letter-spacing: .04em; }
+
+  .photos { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .slot {
+    position: relative; aspect-ratio: 3 / 4; border-radius: var(--radius);
+    border: 1px dashed #3a3a40; background: var(--surface);
+    display: grid; place-items: center; overflow: hidden; cursor: pointer;
+  }
+  .slot input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  .slot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: none; }
+  .slot.filled { border-style: solid; border-color: var(--line); }
+  .slot.filled img { display: block; }
+  .slot .lbl {
+    position: absolute; left: 10px; top: 10px; z-index: 1;
+    font-family: Michroma, sans-serif; font-size: 11px; letter-spacing: .2em;
+    padding: 6px 9px; background: rgba(7,7,8,.82); border: 1px solid var(--gold);
+  }
+  .slot .hint { color: var(--muted); font-size: 14px; text-align: center; padding: 0 12px; }
+  .slot .hint::before { content: "+"; display: block; font-size: 30px; line-height: 1.1; color: var(--gold); }
+  .slot.filled .hint { display: none; }
+  .slot.loading::after {
+    content: ""; position: absolute; inset: 0; background: rgba(10,10,11,.6);
+  }
+
+  .pairs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+  .chip {
+    background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: 999px;
+    font: inherit; font-size: 14px; padding: 7px 13px; cursor: pointer;
+  }
+  .chip.on { border-color: var(--gold); color: var(--gold-hi); }
+  .chip.add { border-style: dashed; color: var(--gold-hi); }
+  .chip:disabled { opacity: .35; cursor: default; }
+  .pairmeta { display: flex; align-items: end; gap: 12px; margin-top: 12px; }
+  .pairmeta label { flex: 1; display: grid; gap: 6px; font-size: 14px; color: var(--muted); }
+  .linkbtn { background: none; border: 0; color: var(--muted); font: inherit; font-size: 14px; text-decoration: underline; padding: 10px 2px; cursor: pointer; }
+  .status { color: var(--muted); font-size: 14px; margin: 14px 2px 18px; min-height: 1.5em; }
+  .status.warn { color: var(--warn); }
+  body.busy .status::before {
+    content: ""; display: inline-block; width: 12px; height: 12px; margin-right: 8px; vertical-align: -1px;
+    border: 2px solid var(--gold); border-right-color: transparent; border-radius: 50%;
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .tabs { display: flex; border-bottom: 1px solid var(--line); margin-bottom: 14px; }
+  .tabs button {
+    flex: 1 1 auto; background: none; border: 0; color: var(--muted); font: inherit; font-size: 14px;
+    padding: 10px 2px; border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer;
+  }
+  .tabs button.on { color: var(--text); border-bottom-color: var(--gold); }
+
+  .stage { display: grid; place-items: center; background: #050506; border-radius: var(--radius); padding: 10px; }
+  #cv { display: block; max-width: 100%; max-height: 68vh; width: auto; height: auto; border-radius: 4px; touch-action: none; }
+  #cv.grab { cursor: grab; }
+  .note { color: var(--muted); font-size: 13px; margin: 8px 2px 0; min-height: 1em; }
+
+  .opts { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .opts label { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+  .opts .check input { accent-color: var(--gold); width: 18px; height: 18px; }
+  .endrow { display: flex; align-items: center; gap: 10px; width: 100%; }
+  #endPreview { width: 44px; height: 44px; border-radius: 6px; object-fit: cover; border: 1px solid var(--line); }
+  .filebtn { position: relative; overflow: hidden; }
+  .filebtn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  .strip {
+    width: 100%; justify-self: stretch; display: flex; gap: 10px; overflow-x: auto;
+    scroll-snap-type: x mandatory; padding-bottom: 8px; -webkit-overflow-scrolling: touch;
+  }
+  .strip canvas { flex: 0 0 auto; width: min(82%, 360px); height: auto; scroll-snap-align: center; border-radius: 4px; }
+  .opts input[type=range] { flex: 1; min-width: 140px; accent-color: var(--gold); }
+
+  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px; }
+  .actions > [hidden] { display: none; }
+  button.btn {
+    font: inherit; font-size: 16px; padding: 13px 16px; border-radius: 10px; cursor: pointer;
+    background: var(--surface); color: var(--text); border: 1px solid var(--line);
+  }
+  button.btn.primary { background: linear-gradient(180deg, #d9b56c, #b68d45); color: #111; border: 0; font-weight: 600; }
+  button.btn:only-child, .actions .wide { grid-column: 1 / -1; }
+  button.btn:disabled { opacity: .5; }
+  #progress { grid-column: 1 / -1; height: 6px; background: var(--surface); border-radius: 3px; overflow: hidden; }
+  #progress span { display: block; height: 100%; width: 0; background: var(--gold); transition: width .1s; }
+
+  section.block { margin-top: 30px; }
+  h2 { font-family: Michroma, sans-serif; font-weight: 400; font-size: 12px; letter-spacing: .2em; color: var(--gold); margin: 0 0 12px; }
+  .fields { display: grid; gap: 12px; }
+  .fields label, .settings label { display: grid; gap: 6px; font-size: 14px; color: var(--muted); }
+  input[type=text] {
+    font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--line);
+    border-radius: 10px; padding: 11px 12px; width: 100%;
+  }
+  input[type=text]:focus, textarea:focus { outline: none; border-color: var(--gold); }
+  textarea {
+    width: 100%; font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--text);
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px; resize: vertical;
+  }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .row .btn { font-size: 14px; padding: 9px 13px; }
+
+  details.settings { margin-top: 30px; border-top: 1px solid var(--line); padding-top: 14px; }
+  details.settings summary { cursor: pointer; color: var(--muted); font-size: 14px; }
+  details.settings[open] summary { margin-bottom: 14px; }
+  .settings { display: grid; gap: 12px; }
+  .settings .check { display: flex; align-items: center; gap: 8px; color: var(--text); }
+  .settings .check input { accent-color: var(--gold); width: 18px; height: 18px; }
+  .logo-row { display: flex; align-items: center; gap: 12px; }
+  #logoPreview { width: 56px; height: 56px; border-radius: 50%; object-fit: cover; border: 1px solid var(--line); }
+  input[type=file] { color: var(--muted); font-size: 14px; }
+  .foot { color: #6f6f75; font-size: 13px; margin-top: 28px; }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand"><b>BLACK MAGIC</b></div>
+  <small>Vorher / Nachher</small>
+</header>
+
+<main>
+  <div class="pairs" id="pairs"></div>
+  <section class="photos">
+    <label class="slot" data-k="V">
+      <input type="file" accept="image/*" id="inV" aria-label="Vorher-Foto wählen">
+      <img alt="">
+      <span class="lbl">VORHER</span>
+      <span class="hint">Foto wählen</span>
+    </label>
+    <label class="slot" data-k="N">
+      <input type="file" accept="image/*" id="inN" aria-label="Nachher-Foto wählen">
+      <img alt="">
+      <span class="lbl">NACHHER</span>
+      <span class="hint">Foto wählen</span>
+    </label>
+  </section>
+  <div class="pairmeta">
+    <label>Bereich <input type="text" id="pairLabel" placeholder="optional, z. B. Tankdeckel" autocomplete="off"></label>
+    <button class="linkbtn" id="btnRemovePair" hidden>Paar entfernen</button>
+  </div>
+  <p id="status" class="status">Zwei Fotos wählen – am besten vom selben Standpunkt aus fotografiert.</p>
+
+  <section id="result" hidden>
+    <div class="tabs" role="tablist">
+      <button data-tab="post" class="on">Beitrag</button>
+      <button data-tab="carousel">Karussell</button>
+      <button data-tab="reel">Reel</button>
+      <button data-tab="story">Story</button>
+      <button data-tab="check">Ausrichten</button>
+    </div>
+    <div class="stage">
+      <canvas id="cv" width="1080" height="1440"></canvas>
+      <div id="strip" class="strip" hidden></div>
+    </div>
+    <p id="note" class="note"></p>
+
+    <div class="opts" id="optCar" hidden>
+      <button class="chip" data-car="swipe">Vorher | Nachher zum Wischen</button>
+      <button class="chip" data-car="split">Ein Bild je Paar</button>
+      <label class="check"><input type="checkbox" id="carCover"> Vorne eine Übersicht</label>
+      <div class="endrow">
+        <img id="endPreview" alt="" hidden>
+        <label class="chip filebtn">Schlussbild wählen<input type="file" id="inEnd" accept="image/*"></label>
+        <button class="linkbtn" id="btnEndRemove" hidden>entfernen</button>
+      </div>
+    </div>
+
+    <div class="opts" id="optPost">
+      <button class="chip on" data-layout="auto">Automatisch</button>
+      <button class="chip" data-layout="diagonal">Schräg geteilt</button>
+      <button class="chip" data-layout="stacked">Übereinander</button>
+      <button class="chip" data-layout="side">Nebeneinander</button>
+    </div>
+    <div class="opts" id="optCheck" hidden>
+      <label><input type="checkbox" id="useAlign"> Deckungsgleich überblenden</label>
+      <label style="flex:1">Nachher <input type="range" id="alpha" min="0" max="100" value="50"></label>
+      <button class="chip" id="btnAuto">Automatisch ausrichten</button>
+    </div>
+
+    <div class="actions">
+      <button class="btn primary wide" id="btnMake" hidden>Reel erstellen</button>
+      <div id="progress" hidden><span></span></div>
+      <button class="btn primary" id="btnShare">Teilen</button>
+      <button class="btn" id="btnSave">Speichern</button>
+    </div>
+  </section>
+
+  <section class="block">
+    <h2>ANGABEN</h2>
+    <div class="fields">
+      <label>Fahrzeug <input type="text" id="vehicle" placeholder="z. B. Mercedes-Benz 190 E" autocomplete="off"></label>
+      <label>Leistung <input type="text" id="service" placeholder="z. B. Tankdeckel & Einfüllbereich" autocomplete="off"></label>
+    </div>
+  </section>
+
+  <section class="block">
+    <h2>BEITRAGSTEXT</h2>
+    <textarea id="caption" rows="9"></textarea>
+    <div class="row">
+      <button class="btn" id="btnCopy">Text kopieren</button>
+      <button class="btn" id="btnVariant">Anderer Einstieg</button>
+      <button class="btn" id="btnPrompt">Prompt für ChatGPT kopieren</button>
+    </div>
+  </section>
+
+  <details class="settings">
+    <summary>Einstellungen (Logo, Ort, Hashtags)</summary>
+    <div class="logo-row">
+      <img id="logoPreview" alt="" hidden>
+      <label>Logo <input type="file" id="inLogo" accept="image/*"></label>
+    </div>
+    <label class="check"><input type="checkbox" id="ring" checked> Goldring ums Logo zeichnen</label>
+    <label>Ort <input type="text" id="place"></label>
+    <label>Eigene Hashtags <input type="text" id="tags" placeholder="#keramik #polieren"></label>
+  </details>
+
+  <p class="foot">Alles passiert auf diesem Gerät – die Fotos werden nirgends hochgeladen.</p>
+</main>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
