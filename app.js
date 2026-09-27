@@ -1,5 +1,5 @@
-import { align, hotSpot } from './align.js';
-import * as R from './render.js';
+import { align, hotSpot } from './align.js?v=202609271502';
+import * as R from './render.js?v=202609271502';
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
@@ -106,7 +106,7 @@ function runAlign(V, N) {
     const fallback = () => resolve(align(V.gray, V.gw, V.gh, N.gray, N.gw, N.gh));
     let worker;
     try {
-      worker = new Worker(new URL('./align-worker.js', import.meta.url), { type: 'module' });
+      worker = new Worker(new URL('./align-worker.js?v=202609271502', import.meta.url), { type: 'module' });
     } catch {
       fallback();
       return;
