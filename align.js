@@ -181,6 +181,55 @@ function invert(p) {
 // aber frontal statt schräg 0,44 (Überlagerung sichtbar doppelt) · verschiedene Motive 0,30–0,39.
 export const MATCH_THRESHOLD = 0.5;
 
+// Stelle mit der größten Veränderung (meist der Schmutz), in normierten Vorher-Koordinaten.
+// Beide Fotos werden vorher auf gleiche Helligkeit und gleichen Kontrast gebracht, damit
+// anderes Licht nicht als Veränderung zählt. win = Fensterbreite als Anteil der Bildbreite.
+export function hotSpot(grayV, wV, hV, grayN, wN, hN, T, win = 0.3) {
+  const c = Math.cos(T.r) * T.s, sn = Math.sin(T.r) * T.s, n = wV * hV;
+  const a = new Float32Array(n), b = new Float32Array(n), ok = new Float32Array(n);
+  let sa = 0, sb = 0, qa = 0, qb = 0, cnt = 0;
+  for (let y = 0; y < hV; y++) {
+    for (let x = 0; x < wV; x++) {
+      const u = (x - wV / 2) / wV, v = (y - hV / 2) / wV;
+      const xn = (c * u - sn * v + T.tx) * wN + wN / 2, yn = (sn * u + c * v + T.ty) * wN + hN / 2;
+      if (xn < 0 || yn < 0 || xn >= wN - 1 || yn >= hN - 1) continue;
+      const x0 = xn | 0, y0 = yn | 0, fx = xn - x0, fy = yn - y0, j = y0 * wN + x0;
+      const val = grayN[j] * (1 - fx) * (1 - fy) + grayN[j + 1] * fx * (1 - fy) +
+        grayN[j + wN] * (1 - fx) * fy + grayN[j + wN + 1] * fx * fy;
+      const i = y * wV + x;
+      a[i] = grayV[i]; b[i] = val; ok[i] = 1;
+      sa += a[i]; sb += val; qa += a[i] * a[i]; qb += val * val; cnt++;
+    }
+  }
+  if (cnt < n * 0.3) return null;
+  const ma = sa / cnt, mb = sb / cnt;
+  const da = Math.sqrt(qa / cnt - ma * ma) || 1, db = Math.sqrt(qb / cnt - mb * mb) || 1;
+  // Summenbilder für Unterschied und gültige Fläche
+  const W1 = wV + 1, S = new Float64Array(W1 * (hV + 1)), O = new Float64Array(W1 * (hV + 1));
+  for (let y = 0; y < hV; y++) {
+    let rs = 0, ro = 0;
+    for (let x = 0; x < wV; x++) {
+      const i = y * wV + x;
+      rs += ok[i] ? Math.abs((a[i] - ma) / da - (b[i] - mb) / db) : 0;
+      ro += ok[i];
+      S[(y + 1) * W1 + x + 1] = S[y * W1 + x + 1] + rs;
+      O[(y + 1) * W1 + x + 1] = O[y * W1 + x + 1] + ro;
+    }
+  }
+  const k = Math.max(4, Math.round(win * wV));
+  const box = (A, x, y) => A[(y + k) * W1 + x + k] - A[y * W1 + x + k] - A[(y + k) * W1 + x] + A[y * W1 + x];
+  let best = -1, bx = 0, by = 0;
+  for (let y = 0; y + k <= hV; y += 2) {
+    for (let x = 0; x + k <= wV; x += 2) {
+      if (box(O, x, y) < k * k * 0.97) continue;
+      const s = box(S, x, y);
+      if (s > best) { best = s; bx = x; by = y; }
+    }
+  }
+  if (best < 0) return null;
+  return { u: (bx + k / 2 - wV / 2) / wV, v: (by + k / 2 - hV / 2) / wV, w: k / wV };
+}
+
 // grayV/grayN: Graustufen als Float32Array, am besten 384 px breit.
 // Gesucht wird in beide Richtungen: Bezug muss das Foto mit dem engeren Ausschnitt sein,
 // sonst ragt das andere über den Rand und die Suche weicht auf einen falschen Maßstab aus.

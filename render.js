@@ -332,9 +332,9 @@ function badgeSpot(ctx, geo, R) {
   return scored[0].e <= best.e * 1.12 ? scored[0].p : best.p;
 }
 
-export function renderPost(ctx, scene, opts) {
+function renderCollage(ctx, scene, opts) {
   const { w: W, h: H } = POST;
-  const geo = POST_LAYOUTS[opts.layout](W, H);
+  const geo = POST_LAYOUTS[opts.layout || autoLayout(scene)](W, H);
   const views = postViews(scene, geo);
   const R = 150;
   ctx.save();
@@ -354,6 +354,253 @@ export function renderPost(ctx, scene, opts) {
   });
   drawBadge(ctx, spot[0], spot[1], R, opts.logo, opts.ring);
   ctx.restore();
+}
+
+// ---------- Weitere Looks ----------
+//
+// Damit Tims Raster nicht aus lauter gleich gebauten Beiträgen besteht, gibt es grundverschiedene
+// Aufbauten. Alle Fotoflächen sind höchstens 1080 × 810 groß, damit auch Instagram-Kopien
+// (1080 px breit) nicht hochgerechnet werden müssen.
+
+export const LOOKS = [
+  { id: 'collage', name: 'Collage' },
+  { id: 'galerie', name: 'Galerie' },
+  { id: 'lupe', name: 'Lupe' },
+  { id: 'detail', name: 'Detail' },
+];
+
+export function renderPost(ctx, scene, opts) {
+  const fn = { collage: renderCollage, galerie: renderGalerie, lupe: renderLupe, detail: renderDetail }[opts.look || 'collage'];
+  ctx.save();
+  fn(ctx, scene, opts);
+  ctx.restore();
+}
+
+// Gemeinsamer Ausschnitt für ein Rechteck (ausgerichtet) bzw. je Foto ein eigener
+function views2(scene, aspect) {
+  const v = scene.T && fitView(scene, aspect);
+  return v ? [v, v] : [coverView(scene.V, aspect), coverView(scene.N, aspect)];
+}
+
+// Ausschnitt um einen Wunschpunkt, notfalls Richtung Bildmitte verschoben, bis er in beide Fotos passt
+function placeView(scene, cu, cv, w, aspect) {
+  const fit = fitView(scene, aspect);
+  if (!fit) return null;
+  w = Math.min(w, fit.w);
+  const h = w / aspect;
+  const ok = (u, v) => inside(scene, u - w / 2, v - h / 2) && inside(scene, u + w / 2, v - h / 2) &&
+    inside(scene, u - w / 2, v + h / 2) && inside(scene, u + w / 2, v + h / 2);
+  const at = (t) => [cu + (fit.cu - cu) * t, cv + (fit.cv - cv) * t];
+  if (ok(cu, cv)) return { cu, cv, w, h };
+  let lo = 0, hi = 1;
+  for (let k = 0; k < 30; k++) { const t = (lo + hi) / 2; if (ok(...at(t))) hi = t; else lo = t; }
+  const [u, v] = at(hi);
+  return { cu: u, cv: v, w, h };
+}
+
+// drawView, aber auf das Rechteck beschnitten
+function drawIn(ctx, photo, view, rect, T) {
+  ctx.save();
+  ctx.beginPath(); ctx.rect(rect.x, rect.y, rect.w, rect.h); ctx.clip();
+  drawView(ctx, photo, view, rect, T);
+  ctx.restore();
+}
+
+// Normierter Punkt → Bildschirmpunkt in einem Rechteck mit Ausschnitt view
+function toRect(view, rect, u, v) {
+  return [rect.x + ((u - view.cu) / view.w + 0.5) * rect.w, rect.y + ((v - view.cv) / view.h + 0.5) * rect.h];
+}
+
+const SLOGAN = 'Perfektion bis ins kleinste Detail';
+
+// Überschrift und Unterzeile aus Fahrzeug/Leistung – ohne Angaben Tims Slogan statt „Vorher/Nachher“,
+// das stünde sonst doppelt neben den Schildern
+function headline(opts, serviceFirst = false) {
+  const veh = (opts.vehicle || '').trim(), svc = (opts.service || '').trim();
+  const [a, b] = serviceFirst ? [svc, veh] : [veh, svc];
+  return { head: (a || b || SLOGAN).toUpperCase(), sub: a ? b.toUpperCase() : '' };
+}
+
+// Größte Schrift (max…min), bei der jedes Wort in die Zeile passt; setzt ctx.font
+function fitWords(ctx, text, maxW, max, min, gap) {
+  let size = max;
+  for (; size > min; size--) {
+    ctx.font = `${size}px ${FONT}, sans-serif`;
+    const g = (gap * size) / max;
+    if (text.split(/\s+/).every((w) => measureSpaced(ctx, w, g) <= maxW)) break;
+  }
+  ctx.font = `${size}px ${FONT}, sans-serif`;
+  return { size, gap: (gap * size) / max };
+}
+
+function wrapWords(ctx, text, maxW, gap) {
+  const lines = [];
+  let line = '';
+  for (const word of text.split(/\s+/).filter(Boolean)) {
+    const test = line ? line + ' ' + word : word;
+    if (line && measureSpaced(ctx, test, gap) > maxW) { lines.push(line); line = word; } else line = test;
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+function smallCaps(ctx, text, x, y, size, color, align = 'left', gap = size * 0.35) {
+  ctx.save();
+  ctx.font = `${size}px ${FONT}, sans-serif`;
+  ctx.fillStyle = color;
+  ctx.textBaseline = 'alphabetic';
+  spaced(ctx, text, x, y, gap, align);
+  ctx.restore();
+}
+
+function frameRect(ctx, r, width = 1.5) {
+  ctx.save();
+  ctx.strokeStyle = gold(ctx, r.x, r.y, r.x + r.w, r.y + r.h);
+  ctx.lineWidth = width;
+  ctx.strokeRect(r.x + width / 2, r.y + width / 2, r.w - width, r.h - width);
+  ctx.restore();
+}
+
+// Galerie: zwei Abzüge versetzt übereinander – vorher klein, nachher groß –, Schrift als Satz
+function renderGalerie(ctx, scene, opts) {
+  const { w: W, h: H } = POST;
+  const land = scene.V.w >= scene.V.h;
+  const A = land ? { x: 60, y: 170, w: 600, h: 450 } : { x: 60, y: 110, w: 450, h: 600 };
+  const B = land ? { x: 200, y: 590, w: 820, h: 615 } : { x: 400, y: 520, w: 620, h: 827 };
+  const [vA, vB] = views2(scene, A.w / A.h);
+  ctx.fillStyle = '#0c0c0d';
+  ctx.fillRect(0, 0, W, H);
+  drawIn(ctx, scene.V, vA, A, null);
+  ctx.fillStyle = '#0c0c0d';
+  ctx.fillRect(B.x - 14, B.y - 14, B.w + 28, B.h + 28);
+  drawIn(ctx, scene.N, vB, B, scene.T);
+  frameRect(ctx, B, 1.5);
+  smallCaps(ctx, 'VORHER', A.x, A.y - 26, 17, '#c9a45c');
+  smallCaps(ctx, 'NACHHER', B.x + B.w, B.y + B.h + 48, 17, '#c9a45c', 'right');
+
+  // Satzblock rechts oben neben dem kleinen Abzug
+  const right = W - 60, left = A.x + A.w + 50, maxW = right - left;
+  const { head, sub } = headline(opts);
+  ctx.save();
+  ctx.fillStyle = '#efefef';
+  let y = A.y + 34;
+  const hs = fitWords(ctx, head, maxW, 30, 16, 5);
+  for (const line of wrapWords(ctx, head, maxW, hs.gap)) { spaced(ctx, line, right, y, hs.gap, 'right'); y += hs.size * 1.55; }
+  if (sub) {
+    ctx.fillStyle = '#c9a45c';
+    y += 12;
+    const ss = fitWords(ctx, sub, maxW, 16, 11, 4);
+    for (const line of wrapWords(ctx, sub, maxW, ss.gap)) { spaced(ctx, line, right, y, ss.gap, 'right'); y += ss.size * 1.75; }
+  }
+  ctx.strokeStyle = gold(ctx, right - 120, 0, right, 0);
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(right - 120, y + 8); ctx.lineTo(right, y + 8); ctx.stroke();
+  ctx.restore();
+
+  drawBadge(ctx, 60 + 62, H - 60 - 62, 62, opts.logo, opts.ring);
+}
+
+// Lupe: Nachher randlos oben, ein Kreis zeigt an der schmutzigsten Stelle, wie es vorher aussah
+function renderLupe(ctx, scene, opts) {
+  const { w: W, h: H } = POST;
+  const band = { x: 0, y: 0, w: W, h: 810 };
+  const [vV, vN] = views2(scene, band.w / band.h);
+  ctx.fillStyle = BG;
+  ctx.fillRect(0, 0, W, H);
+  drawIn(ctx, scene.N, vN, band, scene.T);
+
+  const R = 190, m = 36;
+  let [cx, cy] = scene.T && scene.hot ? toRect(vV, band, scene.hot.u, scene.hot.v) : [W - R - 70, band.h - R - 70];
+  cx = Math.max(R + m, Math.min(W - R - m, cx));
+  cy = Math.max(R + m, Math.min(band.h - R - m, cy));
+  ctx.save();
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, TAU); ctx.clip();
+  if (scene.T) drawView(ctx, scene.V, vV, band, null);
+  else drawIn(ctx, scene.V, coverView(scene.V, 1), { x: cx - R, y: cy - R, w: 2 * R, h: 2 * R }, null);
+  ctx.restore();
+  ctx.save();
+  ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 14;
+  ctx.beginPath(); ctx.arc(cx, cy, R + 2, 0, TAU); ctx.stroke();
+  ctx.strokeStyle = gold(ctx, cx - R, cy - R, cx + R, cy + R); ctx.lineWidth = 7;
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, TAU); ctx.stroke();
+  ctx.restore();
+  const size = 22, th = tagHeight(size);
+  const tagY = cy + R + 16 + th <= band.h - 16 ? cy + R + 16 : cy - R - 16 - th;
+  drawTag(ctx, 'VORHER', cx, tagY, cx > W / 2 ? 'right' : 'left', size);
+  drawTag(ctx, 'NACHHER', 32, 32, 'left', size);
+
+  // Satz unten
+  const { head, sub: veh } = headline(opts, true);
+  ctx.save();
+  ctx.fillStyle = '#f2f2f2';
+  // größte Schrift, bei der die Überschrift in höchstens zwei Zeilen passt
+  const maxW = W - 60 - 280;
+  let s = 54, gap, lines;
+  for (; s >= 28; s -= 2) {
+    ctx.font = `${s}px ${FONT}, sans-serif`;
+    gap = (6 * s) / 54;
+    lines = wrapWords(ctx, head, maxW, gap);
+    if (lines.length <= 2 && lines.every((l) => measureSpaced(ctx, l, gap) <= maxW)) break;
+  }
+  let y = 810 + (lines.length > 1 ? 190 : 230);
+  for (const line of lines) {
+    spaced(ctx, line, 60, y, gap, 'left');
+    y += s * 1.4;
+  }
+  ctx.strokeStyle = gold(ctx, 60, 0, 300, 0); ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(60, y - 30); ctx.lineTo(300, y - 30); ctx.stroke();
+  if (veh) smallCaps(ctx, veh, 60, y + 22, 22, '#bdbdc2', 'left', 5);
+  ctx.restore();
+  drawBadge(ctx, W - 60 - 105, 810 + 315, 105, opts.logo, opts.ring);
+}
+
+// Detail: oben zwei Quadrate mit derselben Stelle vorher/nachher, unten das ganze Ergebnis
+function renderDetail(ctx, scene, opts) {
+  const { w: W, h: H } = POST;
+  const band = { x: 0, y: 630, w: W, h: 810 };
+  const SA = { x: 40, y: 40, w: 480, h: 480 }, SB = { x: 560, y: 40, w: 480, h: 480 };
+  ctx.fillStyle = BG;
+  ctx.fillRect(0, 0, W, H);
+  const [, vN] = views2(scene, band.w / band.h);
+  drawIn(ctx, scene.N, vN, band, scene.T);
+
+  let qV, qN;
+  if (scene.T) {
+    // so klein wie möglich (= stärkste Vergrößerung), ohne Fotos hochzurechnen
+    const minW = SA.w / (MAX_UPSCALE * Math.min(scene.V.w, scene.N.w * scene.T.s));
+    const hot = scene.hot || { u: 0, v: 0, w: minW };
+    const q = placeView(scene, hot.u, hot.v, Math.max(minW, hot.w * 0.9), 1);
+    qV = qN = q;
+  }
+  if (!qV) { qV = coverView(scene.V, 1); qN = coverView(scene.N, 1); }
+  drawIn(ctx, scene.V, qV, SA, null);
+  drawIn(ctx, scene.N, qN, SB, qV === qN ? scene.T : null);
+  frameRect(ctx, SA); frameRect(ctx, SB);
+  const size = 20, th = tagHeight(size);
+  drawTag(ctx, 'VORHER', SA.x + 18, SA.y + SA.h - 18 - th, 'left', size);
+  drawTag(ctx, 'NACHHER', SB.x + 18, SB.y + SB.h - 18 - th, 'left', size);
+
+  // Goldlinie mit Logo zwischen Details und Gesamtbild, daneben Fahrzeug und Leistung
+  const y = 575, R = 60;
+  ctx.save();
+  ctx.strokeStyle = gold(ctx, 40, 0, 1040, 0); ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(40, y); ctx.lineTo(W / 2 - R - 24, y); ctx.moveTo(W / 2 + R + 24, y); ctx.lineTo(1040, y); ctx.stroke();
+  ctx.restore();
+  const veh = (opts.vehicle || '').trim().toUpperCase(), svc = (opts.service || '').trim().toUpperCase();
+  ctx.save();
+  if (veh) { ctx.font = `17px ${FONT}, sans-serif`; ctx.fillStyle = '#e6e6e6'; fitSpacedLeft(ctx, veh, 40, y - 14, 4, W / 2 - R - 80, 17); }
+  if (svc) { ctx.font = `15px ${FONT}, sans-serif`; ctx.fillStyle = '#c9a45c'; fitSpacedLeft(ctx, svc, 1040, y - 14, 4, W / 2 - R - 80, 15, 'right'); }
+  ctx.restore();
+  drawBadge(ctx, W / 2, y, R, opts.logo, opts.ring);
+}
+
+function fitSpacedLeft(ctx, text, x, y, gap, maxW, size, align = 'left') {
+  let s = size;
+  while (s > 10 && measureSpaced(ctx, text, (gap * s) / size) > maxW) {
+    s -= 1;
+    ctx.font = ctx.font.replace(/^\d+px/, `${s}px`);
+  }
+  spaced(ctx, text, x, y, (gap * s) / size, align);
 }
 
 // ---------- Reel 9:16 ----------
@@ -392,33 +639,106 @@ export function wipeAt(t) {
 }
 export const STORY_TIME = REEL.dur - 0.4;
 
+export const REEL_STYLES = [
+  { id: 'wisch', name: 'Wisch' },
+  { id: 'kreis', name: 'Kreis' },
+  { id: 'regler', name: 'Schieberegler' },
+];
+
+// Schieberegler: wie jemand, der den Regler hin- und herzieht (0 = alles nachher, 1 = alles vorher)
+const SLIDER_KEYS = [[0, 0.5], [0.7, 0.5], [2.0, 0.12], [2.5, 0.12], [3.9, 0.88], [4.4, 0.88], [5.5, 0.5]];
+function sliderAt(t) {
+  for (let i = 1; i < SLIDER_KEYS.length; i++) {
+    const [t1, p1] = SLIDER_KEYS[i], [t0, p0] = SLIDER_KEYS[i - 1];
+    if (t < t1) return p0 + (p1 - p0) * ease((t - t0) / (t1 - t0));
+  }
+  return 0.5;
+}
+
+// Kreis: 0 → wächst bis alles nachher → zieht sich auf einen Ausschnitt zusammen
+function circleAt(t) {
+  if (t < 0.8) return { phase: 0, k: 0 };
+  if (t < 2.6) return { phase: 1, k: ease((t - 0.8) / 1.8) };
+  if (t < 4.0) return { phase: 1, k: 1 };
+  if (t < 5.2) return { phase: 2, k: ease((t - 4.0) / 1.2) };
+  return { phase: 2, k: 1 };
+}
+
+function drawKnob(ctx, x, y) {
+  const R = 40;
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.45)'; ctx.shadowBlur = 14; ctx.shadowOffsetY = 3;
+  ctx.fillStyle = gold(ctx, x - R, y - R, x + R, y + R);
+  ctx.beginPath(); ctx.arc(x, y, R, 0, TAU); ctx.fill();
+  ctx.restore();
+  ctx.save();
+  ctx.strokeStyle = '#111'; ctx.lineWidth = 5; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.beginPath();
+  ctx.moveTo(x - 8, y - 11); ctx.lineTo(x - 18, y); ctx.lineTo(x - 8, y + 11);
+  ctx.moveTo(x + 8, y - 11); ctx.lineTo(x + 18, y); ctx.lineTo(x + 8, y + 11);
+  ctx.stroke();
+  ctx.restore();
+}
+
 export function renderReelFrame(ctx, scene, G, t, opts) {
   const { w: W, h: H } = REEL;
   const st = G.stage;
-  const p = wipeAt(t);
+  const style = opts.transition || 'wisch';
   const z = 1 + 0.04 * ease(clamp01(t / REEL.dur));
   const vV = zoomView(G.views[0], z), vN = zoomView(G.views[1], z);
+  const y0 = st.y, y1 = st.y + st.h;
 
   ctx.save();
   ctx.fillStyle = '#070708';
   ctx.fillRect(0, 0, W, H);
-
-  // Linie: 6° schräg; p = 1 ganz rechts draußen, p = 0 ganz links draußen
-  const slant = Math.tan((6 * Math.PI) / 180) * st.h;
-  const xc = st.x - slant / 2 - 12 + p * (st.w + slant + 24);
-  const xt = xc + slant / 2, xb = xc - slant / 2, y0 = st.y, y1 = st.y + st.h;
-
   ctx.save();
   ctx.beginPath(); ctx.rect(st.x, st.y, st.w, st.h); ctx.clip();
-  ctx.save(); clipPoly(ctx, [[st.x - 2, y0], [xt, y0], [xb, y1], [st.x - 2, y1]]);
-  drawView(ctx, scene.V, vV, st, null); ctx.restore();
-  ctx.save(); clipPoly(ctx, [[xt, y0], [st.x + st.w + 2, y0], [st.x + st.w + 2, y1], [xb, y1]]);
-  drawView(ctx, scene.N, vN, st, scene.T); ctx.restore();
-  if (p > 0 && p < 1) drawLine(ctx, [xt, y0], [xb, y1], 7);
+
+  let aV, aN;
+  if (style === 'kreis') {
+    // Mittelpunkt: Stelle mit der größten Veränderung, sonst Bildmitte
+    let [cx, cy] = scene.T && scene.hot ? toRect(vV, st, scene.hot.u, scene.hot.v) : [st.x + st.w / 2, st.y + st.h / 2];
+    const rEnd = Math.min(st.w, st.h) * 0.3;
+    cx = Math.max(st.x + rEnd + 30, Math.min(st.x + st.w - rEnd - 30, cx));
+    cy = Math.max(y0 + rEnd + 30, Math.min(y1 - rEnd - 30, cy));
+    const rMax = Math.max(...[[st.x, y0], [st.x + st.w, y0], [st.x, y1], [st.x + st.w, y1]].map(([x, y]) => Math.hypot(x - cx, y - cy))) + 10;
+    const c = circleAt(t);
+    const r = c.phase === 0 ? 0 : c.phase === 1 ? c.k * rMax : rMax + (rEnd - rMax) * c.k;
+    drawView(ctx, scene.V, vV, st, null);
+    if (r > 0.5) {
+      ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU); ctx.clip();
+      drawView(ctx, scene.N, vN, st, scene.T); ctx.restore();
+      if (r < rMax - 5) {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 13;
+        ctx.beginPath(); ctx.arc(cx, cy, r + 2, 0, TAU); ctx.stroke();
+        ctx.strokeStyle = gold(ctx, cx - r, cy - r, cx + r, cy + r); ctx.lineWidth = 7;
+        ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU); ctx.stroke();
+        ctx.restore();
+      }
+    }
+    const f = r / rMax;
+    aV = 1 - smooth(0.55, 0.8, f);
+    aN = smooth(0.12, 0.28, f);
+  } else {
+    // Linie; p = 1 ganz rechts draußen (alles vorher), p = 0 ganz links draußen (alles nachher)
+    const slider = style === 'regler';
+    const p = slider ? sliderAt(t) : wipeAt(t);
+    const slant = slider ? 0 : Math.tan((6 * Math.PI) / 180) * st.h;
+    const xc = slider ? st.x + p * st.w : st.x - slant / 2 - 12 + p * (st.w + slant + 24);
+    const xt = xc + slant / 2, xb = xc - slant / 2;
+    ctx.save(); clipPoly(ctx, [[st.x - 2, y0], [xt, y0], [xb, y1], [st.x - 2, y1]]);
+    drawView(ctx, scene.V, vV, st, null); ctx.restore();
+    ctx.save(); clipPoly(ctx, [[xt, y0], [st.x + st.w + 2, y0], [st.x + st.w + 2, y1], [xb, y1]]);
+    drawView(ctx, scene.N, vN, st, scene.T); ctx.restore();
+    if (p > 0 && p < 1) drawLine(ctx, [xt, y0], [xb, y1], slider ? 6 : 7);
+    if (slider) drawKnob(ctx, xc, (y0 + y1) / 2);
+    aV = slider ? 1 : smooth(0.25, 0.45, p);
+    aN = slider ? 1 : 1 - smooth(0.55, 0.75, p);
+  }
   ctx.restore();
 
   const size = 26, th = tagHeight(size);
-  const aV = smooth(0.25, 0.45, p), aN = 1 - smooth(0.55, 0.75, p);
   if (G.mode === 'band') {
     drawTag(ctx, 'VORHER', st.x + 32, y1 - 32 - th, 'left', size, aV);
     drawTag(ctx, 'NACHHER', st.x + st.w - 32, y1 - 32 - th, 'right', size, aN);

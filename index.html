@@ -99,6 +99,14 @@
 
   .opts { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   .opts label { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+  .looks { display: flex; width: 100%; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .looks button {
+    flex: 1; background: var(--surface); color: var(--muted); border: 0; border-left: 1px solid var(--line);
+    font: inherit; font-size: 14px; padding: 10px 4px; cursor: pointer;
+  }
+  .looks button:first-child { border-left: 0; }
+  .looks button.on { background: #1d1b17; color: var(--gold-hi); }
+  .opts.sub { margin-top: 2px; }
   .opts .check input { accent-color: var(--gold); width: 18px; height: 18px; }
   .endrow { display: flex; align-items: center; gap: 10px; width: 100%; }
   #endPreview { width: 44px; height: 44px; border-radius: 6px; object-fit: cover; border: 1px solid var(--line); }
@@ -205,10 +213,16 @@
     </div>
 
     <div class="opts" id="optPost">
-      <button class="chip on" data-layout="auto">Automatisch</button>
-      <button class="chip" data-layout="diagonal">Schräg geteilt</button>
-      <button class="chip" data-layout="stacked">Übereinander</button>
-      <button class="chip" data-layout="side">Nebeneinander</button>
+      <div class="looks" id="looks"></div>
+      <div class="opts sub" id="optLayout">
+        <button class="chip on" data-layout="auto">Automatisch</button>
+        <button class="chip" data-layout="diagonal">Schräg geteilt</button>
+        <button class="chip" data-layout="stacked">Übereinander</button>
+        <button class="chip" data-layout="side">Nebeneinander</button>
+      </div>
+    </div>
+    <div class="opts" id="optReel" hidden>
+      <div class="looks" id="reelStyles"></div>
     </div>
     <div class="opts" id="optCheck" hidden>
       <label><input type="checkbox" id="useAlign"> Deckungsgleich überblenden</label>

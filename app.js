@@ -1,4 +1,4 @@
-import { align } from './align.js';
+import { align, hotSpot } from './align.js';
 import * as R from './render.js';
 
 const $ = (s) => document.querySelector(s);
@@ -15,9 +15,14 @@ const store = {
 };
 
 // Ein Paar: Vorher/Nachher-Foto, Ausrichtung (auto = automatisch, T = gilt gerade), Bereich
-const newPair = () => ({ V: null, N: null, auto: null, T: null, useAlign: false, label: '', msg: '', warn: false, busy: false });
+const newPair = () => ({ V: null, N: null, auto: null, T: null, hot: null, useAlign: false, label: '', msg: '', warn: false, busy: false });
+
+// Abwechslung im Raster: jeder neue Beitrag bekommt den nächsten Look, jedes Reel den nächsten Übergang
+const nextOf = (list, last) => list[(list.findIndex((x) => x.id === last) + 1) % list.length].id;
 
 const state = {
+  look: nextOf(R.LOOKS, store.get('lastLook', '')),
+  reelStyle: nextOf(R.REEL_STYLES, store.get('lastReel', '')),
   pairs: [newPair()],
   cur: 0,
   end: null, // Schlussbild fürs Karussell
@@ -149,6 +154,7 @@ async function analyse(p) {
   p.auto = { s: res.s, r: res.r, tx: res.tx, ty: res.ty };
   p.useAlign = res.matched;
   p.T = res.matched ? { ...p.auto } : null;
+  p.hot = res.matched ? hotSpot(p.V.gray, p.V.gw, p.V.gh, p.N.gray, p.N.gw, p.N.gh, p.auto, 0.3) : null;
   const pct = Math.round(res.score * 100);
   p.msg = res.matched
     ? `Deckungsgleich ausgerichtet (Übereinstimmung ${pct} %). Unter „Ausrichten“ lässt es sich prüfen.`
@@ -223,11 +229,13 @@ $('#pairLabel').addEventListener('input', (e) => {
 // ---------- Anzeige ----------
 
 function scene(p = pair()) {
-  return { V: p.V, N: p.N, T: p.useAlign ? p.T : null };
+  return { V: p.V, N: p.N, T: p.useAlign ? p.T : null, hot: p.hot };
 }
 
 function opts() {
   return {
+    look: state.look,
+    transition: state.reelStyle,
     logo: state.logo,
     ring: state.ring,
     vehicle: $('#vehicle').value,
@@ -261,8 +269,12 @@ function draw() {
   cancelAnimationFrame(state.loop);
   const tab = state.tab, p = pair(), car = tab === 'carousel';
   const has = car ? state.pairs.some(ready) : ready(p);
-  $('#optPost').hidden = tab !== 'post' || !has;
+  $('#optPost').hidden = !(tab === 'post' || car) || !has;
+  $('#optLayout').hidden = state.look !== 'collage' || car;
+  $('#optReel').hidden = tab !== 'reel' || !has;
   $('#optCheck').hidden = tab !== 'check' || !has;
+  chips('#looks', R.LOOKS, state.look, (id) => { state.look = id; state.carReady = null; draw(); });
+  chips('#reelStyles', R.REEL_STYLES, state.reelStyle, (id) => { state.reelStyle = id; state.reel = null; draw(); });
   $('#optCar').hidden = !car || !has;
   cv.hidden = car || !has;
   $('#strip').hidden = !car || !has;
@@ -288,8 +300,10 @@ function draw() {
       b.disabled = b.dataset.layout === 'diagonal' && !sc.T;
     });
     R.renderPost(ctx, sc, { ...opts(), layout });
-    const up = R.postUpscale(sc, layout);
-    note(up > R.MAX_UPSCALE ? `Hinweis: Die Fotos sind für diesen Ausschnitt etwas klein (${up.toFixed(1)}-fach vergrößert). Mit den Original-Fotos aus der Galerie wird es schärfer.` : '');
+    const up = state.look === 'collage' ? R.postUpscale(sc, layout) : 1;
+    note(up > R.MAX_UPSCALE
+      ? `Hinweis: Die Fotos sind für diesen Ausschnitt etwas klein (${up.toFixed(1)}-fach vergrößert). Mit den Original-Fotos aus der Galerie wird es schärfer.`
+      : 'Der nächste Beitrag bekommt automatisch einen anderen Look, damit das Profil abwechslungsreich bleibt.');
   } else if (tab === 'reel' || tab === 'story') {
     size(R.REEL.w, R.REEL.h);
     const G = R.reelGeometry(sc);
@@ -311,6 +325,27 @@ function draw() {
     R.renderOverlay(ctx, sc, cv.width, cv.height, $('#alpha').value / 100);
     note(sc.T ? 'Nachher-Foto liegt halbdurchsichtig über dem Vorher-Foto. Mit einem Finger verschieben, mit zwei Fingern zoomen und drehen.' : 'Überblenden ist aus – die Fotos werden getrennt gezeigt.');
   }
+}
+
+// Umschalter wie „Collage | Galerie | Lupe | Detail“
+function chips(sel, list, current, onPick) {
+  const box = $(sel);
+  if (box.children.length !== list.length) {
+    box.replaceChildren(...list.map((item) => {
+      const b = document.createElement('button');
+      b.textContent = item.name;
+      b.dataset.id = item.id;
+      b.addEventListener('click', () => { onPick(item.id); });
+      return b;
+    }));
+  }
+  [...box.children].forEach((b) => b.classList.toggle('on', b.dataset.id === current));
+}
+
+// Merkt sich den zuletzt verwendeten Look, damit der nächste Beitrag anders aussieht
+function remember() {
+  if (state.tab === 'reel') store.set('lastReel', state.reelStyle);
+  else if (state.tab === 'post' || state.tab === 'carousel') store.set('lastLook', state.look);
 }
 
 function size(w, h) {
@@ -518,14 +553,19 @@ $('#btnShare').addEventListener('click', async () => {
   try {
     if (!navigator.canShare({ files })) throw new Error('multi');
     await navigator.share({ files });
+    remember();
   } catch (e) {
     if (e.name !== 'AbortError') {
       note('Teilen hat nicht geklappt – die Bilder werden stattdessen gespeichert. In Instagram dann „Mehrere auswählen“.');
+      remember();
       downloadAll(files);
     }
   }
 });
-$('#btnSave').addEventListener('click', async () => downloadAll(await currentFiles()));
+$('#btnSave').addEventListener('click', async () => {
+  remember();
+  downloadAll(await currentFiles());
+});
 
 async function downloadAll(files) {
   for (const file of files) {
